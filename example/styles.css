@@ -81,12 +81,7 @@ html, body {
 }
 
 #side-menu-left {
-    width: 40px;
-}
-
-#side-menu-right {
-    right: 0;
-    width: 300px;
+    width: 20%;
 }
 
 .loading-overlay {
@@ -120,4 +115,80 @@ html, body {
 
 .floating-top label {
     margin-right: 0.5em;
+}
+
+li {
+    margin-left: 0.5rem;
+}
+ul, #myUL {
+    list-style-type: none;
+}
+
+#myUL {
+    margin: 0;
+    padding: 0;
+}
+.tree-menu {
+    background-color: white;
+    padding: 0.5rem;
+    width: 99%;
+    height: 99%;
+    max-height: 100vh;
+    overflow: auto;
+}
+.caret {
+    cursor: pointer;
+    -webkit-user-select: none; /* Safari 3.1+ */
+    -moz-user-select: none; /* Firefox 2+ */
+    -ms-user-select: none; /* IE 10+ */
+    user-select: none;
+}
+
+.caret::before {
+    content: "\25B6";
+    color: black;
+    display: inline-block;
+    margin-right: 6px;
+}
+
+.caret-down::before {
+    -ms-transform: rotate(90deg); /* IE 9 */
+    -webkit-transform: rotate(90deg); /* Safari */'
+transform: rotate(90deg);
+}
+
+.nested {
+    display: none;
+}
+
+.active {
+    display: block;
+}
+input {
+    visibility: collapse;
+}
+
+.table-container{
+    height: 300px;
+    overflow-y: auto;
+}
+
+.ifcjs-dimension-preview {
+    width: 1rem;
+    height: 1rem;
+    background-color: #FFA50F;
+    border-radius: 1rem;
+    opacity: 0.5;
+}
+
+.ifcjs-dimension-label {
+    background-color: black;
+    color: white;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.disabled{
+    opacity: 50%;
+    pointer-events: none;
 }

@@ -4,11 +4,7 @@ import {
   IFCSPACE, IFCOPENINGELEMENT, IFCFURNISHINGELEMENT, IFCWALL, IFCWINDOW, IFCCURTAINWALL, IFCMEMBER, IFCPLATE
 } from 'web-ifc';
 import {
-  MeshBasicMaterial,
-  LineBasicMaterial,
-  Color,
-  Vector2,
-  DepthTexture,
+  MeshBasicMaterial,LineBasicMaterial,Color,Vector2,DepthTexture,
   WebGLRenderTarget, Material, BufferGeometry, BufferAttribute, Mesh
 } from 'three';
 import { ClippingEdges } from 'web-ifc-viewer/dist/components/display/clipping-planes/clipping-edges';
@@ -18,7 +14,13 @@ const container = document.getElementById('viewer-container');
 const viewer = new IfcViewerAPI({ container, backgroundColor: new Color(255, 255, 255) });
 viewer.axes.setAxes();
 viewer.grid.setGrid();
-// viewer.shadowDropper.darkness = 1.5;
+
+// Get all elements
+const table = document.getElementById('info-table');
+const body = table.querySelector('tbody');
+const ulSelector = document.getElementById('ulItem');
+const form = document.getElementById("storeyForm");
+document.getElementById("navigation").addEventListener("click",clickEventHandler);
 
 // Set up stats
 const stats = new Stats();
@@ -32,75 +34,6 @@ viewer.context.ifcCamera.cameraControls
 
 const manager = viewer.IFC.loader.ifcManager;
 
-async function getAllWallMeshes() {
- const wallsIDs = manager.getAllItemsOfType(0, IFCWALL, false);
- const meshes = [];
-  const customID = 'temp-gltf-subset';
-
-  for(const wallID of wallsIDs) {
-   const coordinates = [];
-   const expressIDs = [];
-   const newIndices = [];
-
-   const alreadySaved = new Map();
-
-   const subset = viewer.IFC.loader.ifcManager.createSubset({
-     ids: [wallID],
-     modelID,
-     removePrevious: true,
-     customID
-   });
-
-   const positionAttr = subset.geometry.attributes.position;
-   const expressIDAttr = subset.geometry.attributes.expressID;
-
-   const newGroups = subset.geometry.groups.filter((group) => group.count !== 0);
-   const newMaterials = [];
-   const prevMaterials = subset.material;
-   let newMaterialIndex = 0;
-   newGroups.forEach((group) => {
-     newMaterials.push(prevMaterials[group.materialIndex]);
-     group.materialIndex = newMaterialIndex++;
-   });
-
-   let newIndex = 0;
-   for (let i = 0; i < subset.geometry.index.count; i++) {
-     const index = subset.geometry.index.array[i];
-
-     if (!alreadySaved.has(index)) {
-       coordinates.push(positionAttr.array[3 * index]);
-       coordinates.push(positionAttr.array[3 * index + 1]);
-       coordinates.push(positionAttr.array[3 * index + 2]);
-
-       expressIDs.push(expressIDAttr.getX(index));
-       alreadySaved.set(index, newIndex++);
-     }
-
-     const saved = alreadySaved.get(index);
-     newIndices.push(saved);
-   }
-
-   const geometryToExport = new BufferGeometry();
-   const newVerticesAttr = new BufferAttribute(Float32Array.from(coordinates), 3);
-   const newExpressIDAttr = new BufferAttribute(Uint32Array.from(expressIDs), 1);
-
-   geometryToExport.setAttribute('position', newVerticesAttr);
-   geometryToExport.setAttribute('expressID', newExpressIDAttr);
-   geometryToExport.setIndex(newIndices);
-   geometryToExport.groups = newGroups;
-   geometryToExport.computeVertexNormals();
-
-   const mesh = new Mesh(geometryToExport, newMaterials);
-   meshes.push(mesh);
- }
-
-  viewer.IFC.loader.ifcManager.removeSubset(modelID, undefined, customID);
-  return meshes;
-}
-
-
-
-// viewer.IFC.loader.ifcManager.useWebWorkers(true, 'files/IFCWorker.js');
 viewer.IFC.setWasmPath('files/');
 
 viewer.IFC.loader.ifcManager.applyWebIfcConfig({
@@ -110,81 +43,24 @@ viewer.IFC.loader.ifcManager.applyWebIfcConfig({
 
 viewer.context.renderer.postProduction.active = true;
 
-// Setup loader
-
-// const lineMaterial = new LineBasicMaterial({ color: 0x555555 });
-// const baseMaterial = new MeshBasicMaterial({ color: 0xffffff, side: 2 });
-
 let first = true;
 let model;
+let result;
+let missingProp = [];
 
-async function loadIfc2() {
+async function loadIfc() {
   let params = new URL(document.location).searchParams;
   const urlFile =  params.get("url");
-  console.log(urlFile)
   if(!urlFile) return;
+
   model = await viewer.IFC.loadIfcUrl(urlFile);
+  const ifcProject = await viewer.IFC.getSpatialStructure(model.modelID);
+  const listRoot = document.getElementById('myUL');
+  createNode(listRoot, ifcProject);
+  generateTreeLogic();
   viewer.shadowDropper.renderShadow(model.modelID);
 }
-
-loadIfc2();
-
-const loadIfc = async (event) => {
-
-  // tests with glTF
-  // const file = event.target.files[0];
-  // const url = URL.createObjectURL(file);
-  // const result = await viewer.GLTF.exportIfcFileAsGltf({ ifcFileUrl: url });
-  //
-  // const link = document.createElement('a');
-  // link.download = `${file.name}.gltf`;
-  // document.body.appendChild(link);
-  //
-  // for(const levelName in result.gltf) {
-  //   const level = result.gltf[levelName];
-  //   for(const categoryName in level) {
-  //     const category = level[categoryName];
-  //     link.href = URL.createObjectURL(category.file);
-  //     link.click();
-  //   }
-  // }
-  //
-  // link.remove();
-  const selectedFile = event.target.files[0];
-  if(!selectedFile) return;
-
-  const overlay = document.getElementById('loading-overlay');
-  const progressText = document.getElementById('loading-progress');
-
-  overlay.classList.remove('hidden');
-  progressText.innerText = `Loading`;
-
-  viewer.IFC.loader.ifcManager.setOnProgress((event) => {
-    const percentage = Math.floor((event.loaded * 100) / event.total);
-    progressText.innerText = `Loaded ${percentage}%`;
-  });
-
-  viewer.IFC.loader.ifcManager.parser.setupOptionalCategories({
-    [IFCSPACE]: false,
-    [IFCOPENINGELEMENT]: false
-  });
-
-  model = await viewer.IFC.loadIfc(selectedFile, false);
-  // model.material.forEach(mat => mat.side = 2);
-
-  if(first) first = false
-  else {
-    ClippingEdges.forceStyleUpdate = true;
-  }
-
-  // await createFill(model.modelID);
-  // viewer.edges.create(`${model.modelID}`, model.modelID, lineMaterial, baseMaterial);
-
-  await viewer.shadowDropper.renderShadow(model.modelID);
-
-  overlay.classList.add('hidden');
-
-};
+loadIfc();
 
 const inputElement = document.createElement('input');
 inputElement.setAttribute('type', 'file');
@@ -210,33 +86,325 @@ const handleKeyDown = async (event) => {
 window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
 window.onkeydown = handleKeyDown;
 window.ondblclick = async () => {
-
-  if (viewer.clipper.active) {
-    viewer.clipper.createPlane();
-  } else {
-    const result = await viewer.IFC.selector.highlightIfcItem(true);
+    result = await viewer.IFC.selector.pickIfcItem();
     if (!result) return;
     const { modelID, id } = result;
     const props = await viewer.IFC.getProperties(modelID, id, true, false);
-    console.log(props);
+    const propertySets = await viewer.IFC.loader.ifcManager.getPropertySets(modelID, id);
+
+    for(const propertySet of propertySets){
+      const realValues = [];
+
+      if(propertySet.HasProperties){
+        for(const propriedade of propertySet.HasProperties){
+          const id = propriedade.value;
+          const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+          realValues.push(value);
+        }
+        propertySet.HasProperties = realValues;
+      }
+
+      if(propertySet.Quantities){
+        for(const propriedade of propertySet.Quantities){
+          const id = propriedade.value;
+          const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+          realValues.push(value);
+          }
+        propertySet.Quantities = realValues;
+      }
+    }
+    clearNavBar();
+    createNavItem('Identification',0);
+
+    for(const propertySet of propertySets){
+      createNavItem(propertySet.Name.value,propertySet.expressID);
+    }
+    loadTableIdentification(table, props);
+  };
+
+function createNode(parent, node) {
+  if(node.children.length === 0) {
+    createLeafNode(parent, node);
+  } else {
+    // If there are multiple categories, group them together
+    const grouped = groupCategories(node.children);
+    createBranchNode(parent, node.type, grouped);
   }
-};
+}
 
-//Setup UI
-const loadButton = createSideMenuButton('./resources/folder-icon.svg');
-loadButton.addEventListener('click', () => {
-  loadButton.blur();
-  inputElement.click();
-});
+function createBranchNode(parent, text, children) {
 
-const sectionButton = createSideMenuButton('./resources/section-plane-down.svg');
-sectionButton.addEventListener('click', () => {
-  sectionButton.blur();
-  viewer.clipper.toggle();
-});
+  // container
+  const nodeContainer = document.createElement('li');
+  parent.appendChild(nodeContainer);
 
-const dropBoxButton = createSideMenuButton('./resources/dropbox-icon.svg');
-dropBoxButton.addEventListener('click', () => {
-  dropBoxButton.blur();
-  viewer.dropbox.loadDropboxIfc();
-});
+  // title
+  const title = document.createElement('span');
+  title.textContent = text;
+  title.classList.add('caret');
+  nodeContainer.appendChild(title);
+
+  // children
+  const childrenContainer = document.createElement('ul');
+  childrenContainer.classList.add('nested');
+  nodeContainer.appendChild(childrenContainer);
+
+  children.forEach(child => createNode(childrenContainer, child));
+
+}
+
+function createLeafNode(parent, node) {
+  const leaf = document.createElement('li');
+  leaf.classList.add('leaf-node');
+  leaf.id = node.expressID;
+  leaf.textContent = node.type;
+  leaf.addEventListener('click', () => {
+    viewer.IFC.selector.pickIfcItemsByID(model.modelID,[node.expressID],true)
+  });
+  parent.appendChild(leaf);
+}
+
+function groupCategories(children) {
+  const types = children.map(child => child.type);
+  const uniqueTypes = new Set(types);
+  if (uniqueTypes.size > 1) {
+    const uniquesArray = Array.from(uniqueTypes);
+    children = uniquesArray.map(type => {
+      return {
+        expressID: -1,
+        type: type + 'S',
+        children: children.filter(child => child.type.includes(type)),
+      };
+    });
+  }
+  return children;
+}
+
+function generateTreeLogic() {
+  const toggler = document.getElementsByClassName("caret");
+  for (let i = 0; i < toggler.length; i++) {
+    toggler[i].addEventListener("click", function() {
+      this.parentElement.querySelector(".nested").classList.toggle("active");
+      this.classList.toggle("caret-down");
+    });
+  }
+}
+
+function clearNavBar(){
+  while (ulSelector.firstChild){
+    ulSelector.removeChild(ulSelector.firstChild);
+  }
+}
+
+function createRow(key,value){
+  let row = document.createElement('tr');
+  body.appendChild(row);
+  let propertyName = document.createElement('td');
+  propertyName.textContent = decodeIFCString(key);
+  row.appendChild(propertyName);
+
+  let propertyValue = document.createElement('td');
+  propertyValue.textContent = decodeIFCString(value);
+  row.appendChild(propertyValue);
+}
+
+function createNavItem(name, id){
+  let ulItem = document.createElement('li');
+  ulItem.classList.add("nav-item");
+  ulSelector.appendChild(ulItem);
+  let propertySetName = document.createElement('div');
+  propertySetName.classList.add("nav-link");
+  propertySetName.textContent = decodeIFCString(name);
+  if(name == 'Identification'){
+    propertySetName.classList.add("active");
+  }
+  propertySetName.dataset.elementId = id;
+  ulItem.appendChild(propertySetName);
+}
+
+function decodeIFCString(ifcString) {
+  const ifcUnicodeRegEx = /\\X2\\(.*?)\\X0\\/uig;
+  let propString = ifcString;
+  let match = ifcUnicodeRegEx.exec(ifcString);
+  let unicodeChar;
+  while (match) {
+      if(match[1].length == 4){
+        unicodeChar = String.fromCharCode(parseInt(match[1], 16));
+      } else {
+        const numCaracteres = match[1].length/4;
+        const arrayCaracteres = [];
+        let j;
+
+        for(let i=0; i<numCaracteres;i++){
+          if(i == 0){
+            j=4;
+          } else {
+            j=4*(i+1);
+          }
+          arrayCaracteres.push(String.fromCharCode(parseInt(match[1].slice(i*4,j),16)));
+        }
+        unicodeChar = arrayCaracteres.join("");
+      }
+      propString = propString.replace(match[0], unicodeChar);
+      match = ifcUnicodeRegEx.exec(ifcString);
+  }
+  return propString;
+}
+
+async function loadTableIdentification(table, properties){
+
+  const { modelID, id } = result;
+  clearTable();
+
+  let typeDescription;
+  let materialDescription;
+  let realValues = [];
+  for(const element of properties.type){
+    if(element.Name){
+      typeDescription = element.Name.value;
+    } 
+  }
+  for(const element of properties.mats){
+    if(element.Materials){
+      for(const material of element.Materials){
+        const id = material.value;
+        const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+        realValues.push(value);
+      }
+      element.Materials = realValues;
+    } else if(element.Name) {
+      materialDescription = element.Name.value;
+    }
+  }
+  for(const element of properties.mats){
+    if(element.Materials){
+      for(const material of element.Materials){
+        if(materialDescription){
+          materialDescription = materialDescription + ", " + decodeIFCString(material.Name.value);
+        } else{
+          materialDescription = decodeIFCString(material.Name.value);
+        }
+      }
+    }
+  }
+
+  delete properties.psets;
+  delete properties.mats;
+  delete properties.type;
+
+  for(let key in properties){
+    let value;
+    if(decodeIFCString(properties[key] == null || decodeIFCString(properties[key]) === undefined)){
+      value = "Unknown";
+    } else if(decodeIFCString(properties[key]) && key == 'expressID') {
+      value = decodeIFCString(properties[key]);
+    } else {
+      value = decodeIFCString(properties[key].value);
+    }
+    createRow(key, value);
+  }
+
+  createRow('Material',materialDescription);
+  createRow('Type Name', typeDescription);  
+}
+
+function clearTable(){
+  while (body.firstChild){
+    body.removeChild(body.firstChild);
+  }
+}
+
+async function clickEventHandler(e){
+  if(e.target.matches(".nav-link")){
+    loadTable(e.target.dataset.elementId);
+  }
+  let navLinks = document.querySelectorAll(".nav-link");
+  navLinks.forEach(function(linkEl){
+    linkEl.classList.remove("active");
+  });
+  e.target.classList.add("active");
+}
+
+async function loadTable(pset){
+  if(pset == 0){
+    const { modelID, id } = result;
+    const props = await viewer.IFC.getProperties(modelID, id, true, false);
+    loadTableIdentification(table, props);
+  } else{
+    const { modelID, id } = result;
+    const propertySet = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, parseInt(pset));
+    const realValues = [];
+    const complexValues = [];
+    if(propertySet.HasProperties){
+      for(const propriedade of propertySet.HasProperties){
+        const id = propriedade.value;
+        const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+        realValues.push(value);
+      }
+      propertySet.HasProperties = realValues;
+    }
+    if(propertySet.Quantities){
+      for(const propriedade of propertySet.Quantities){
+        const id = propriedade.value;
+        const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+        realValues.push(value);
+      propertySet.Quantities = realValues;
+     }
+    }
+    clearTable();
+    if(propertySet.HasProperties){
+      for(let key of propertySet.HasProperties){
+        let value;
+        if(key.NominalValue.value == null || key.NominalValue.value === undefined){
+          value = "Unknown";
+        } else {
+          value = key.NominalValue.value;
+        }
+        createRow(key.Name.value,value);
+      }
+    }
+    if(propertySet.Quantities){
+      for(let key of propertySet.Quantities){
+        if(key.HasQuantities){
+          for(const propComplex of key.HasQuantities){
+            const complexId = propComplex.value;
+            const complexValue = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, complexId);
+            complexValues.push(complexValue);
+          }
+          key.HasQuantities = complexValues;
+        }
+        if(key.HasQuantities){
+          for(const propComplex of key.HasQuantities){
+            let value;
+            if(propComplex.LengthValue){
+              value = propComplex.LengthValue.value;
+            } else if(propComplex.AreaValue){
+              value = propComplex.AreaValue.value;
+            } else if(propComplex.VolumeValue){
+              value = propComplex.VolumeValue.value;
+            } else if(propComplex.WeightValue){
+              value = propComplex.WeightValue.value;
+            } else{
+              value = "Unknown";
+            }
+            createRow(key.Name.value + "." + propComplex.Name.value,value);
+          }
+        } else {
+          let value;
+          if(key.LengthValue){
+            value = key.LengthValue.value;
+          } else if(key.AreaValue){
+            value = key.AreaValue.value;
+          } else if(key.VolumeValue){
+            value = key.VolumeValue.value;
+          } else if(key.WeightValue){
+            value = key.WeightValue.value;
+          } else{
+            value = "Unknown";
+          }
+          createRow(key.Name.value,value);
+          }
+        }
+      }
+  }
+}
