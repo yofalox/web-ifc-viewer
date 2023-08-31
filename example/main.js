@@ -5,7 +5,7 @@ import {
 } from 'web-ifc';
 import {
   MeshBasicMaterial,LineBasicMaterial,Color,Vector2,DepthTexture,
-  WebGLRenderTarget, Material, BufferGeometry, BufferAttribute, Mesh
+  WebGLRenderTarget, Material, BufferGeometry, BufferAttribute, Mesh, Scene
 } from 'three';
 import { ClippingEdges } from 'web-ifc-viewer/dist/components/display/clipping-planes/clipping-edges';
 import Stats from 'stats.js/src/Stats';
@@ -57,20 +57,24 @@ async function loadIfc() {
   const ifcProject = await viewer.IFC.getSpatialStructure(model.modelID);
   const listRoot = document.getElementById('myUL');
   createNode(listRoot, ifcProject);
-  generateTreeLogic();
   viewer.shadowDropper.renderShadow(model.modelID);
 }
 loadIfc();
 
+const scene = viewer.context.getScene();
 const inputElement = document.createElement('input');
 inputElement.setAttribute('type', 'file');
 inputElement.classList.add('hidden');
 inputElement.addEventListener('change', loadIfc, false);
+viewer.clipper.active = true;
 
 const handleKeyDown = async (event) => {
-  if (event.code === 'Delete') {
+  
+  if(event.code === 'KeyP') {
+    viewer.clipper.createPlane();
+  }
+  else if(event.code === 'KeyO') {
     viewer.clipper.deletePlane();
-    viewer.dimensions.delete();
   }
   if (event.code === 'Escape') {
     viewer.IFC.selector.unHighlightIfcItems();
@@ -86,81 +90,130 @@ const handleKeyDown = async (event) => {
 window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
 window.onkeydown = handleKeyDown;
 window.ondblclick = async () => {
-    result = await viewer.IFC.selector.pickIfcItem();
-    if (!result) return;
-    const { modelID, id } = result;
-    const props = await viewer.IFC.getProperties(modelID, id, true, false);
-    const propertySets = await viewer.IFC.loader.ifcManager.getPropertySets(modelID, id);
+  result = await viewer.IFC.selector.pickIfcItem();
+  if (!result) {
+    viewer.IFC.selector.unpickIfcItems();
+    return;
+  }
+  const { modelID, id } = result;
+  todojunto(modelID,id);
+};
 
-    for(const propertySet of propertySets){
-      const realValues = [];
+async function todojunto(modelID, id){
+  const props = await viewer.IFC.getProperties(modelID, id, true, false);
+  const propertySets = await viewer.IFC.loader.ifcManager.getPropertySets(modelID, id);
 
-      if(propertySet.HasProperties){
-        for(const propriedade of propertySet.HasProperties){
-          const id = propriedade.value;
-          const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
-          realValues.push(value);
+  for(const propertySet of propertySets){
+    const realValues = [];
+
+    if(propertySet.HasProperties){
+      for(const propriedade of propertySet.HasProperties){
+        const id = propriedade.value;
+        const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+        realValues.push(value);
+      }
+      propertySet.HasProperties = realValues;
+    }
+
+    if(propertySet.Quantities){
+      for(const propriedade of propertySet.Quantities){
+        const id = propriedade.value;
+        const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
+        realValues.push(value);
         }
-        propertySet.HasProperties = realValues;
-      }
-
-      if(propertySet.Quantities){
-        for(const propriedade of propertySet.Quantities){
-          const id = propriedade.value;
-          const value = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, id);
-          realValues.push(value);
-          }
-        propertySet.Quantities = realValues;
-      }
+      propertySet.Quantities = realValues;
     }
-    clearNavBar();
-    createNavItem('Identification',0);
+  }
+  clearNavBar();
+  createNavItem('Identification',id);
 
-    for(const propertySet of propertySets){
-      createNavItem(propertySet.Name.value,propertySet.expressID);
-    }
-    loadTableIdentification(table, props);
-  };
+  for(const propertySet of propertySets){
+    createNavItem(propertySet.Name.value,propertySet.expressID);
+  }
+  loadTableIdentification(table, props);
+}
 
 function createNode(parent, node) {
   if(node.children.length === 0) {
     createLeafNode(parent, node);
   } else {
     // If there are multiple categories, group them together
-    const grouped = groupCategories(node.children);
-    createBranchNode(parent, node.type, grouped);
+    // const grouped = groupCategories(node.children);
+    createBranchNode(parent, node, node.children);
   }
 }
 
-function createBranchNode(parent, text, children) {
+async function createBranchNode(parent, node, children) {
 
   // container
   const nodeContainer = document.createElement('li');
   parent.appendChild(nodeContainer);
 
   // title
+  const div   = document.createElement('div');
   const title = document.createElement('span');
-  title.textContent = text;
-  title.classList.add('caret');
-  nodeContainer.appendChild(title);
+  const caret = document.createElement('span');
+  const props = await viewer.IFC.getProperties(model.modelID, node.expressID, true, false);
+  title.textContent = props.Name.value;
+  caret.classList.add('caret');
+  title.addEventListener("click", function() {
+    todojunto(model.modelID,node.expressID);
+  });
+  caret.addEventListener("click", function() {
+      this.parentElement.parentElement.querySelector(".nested").classList.toggle("active");
+      this.classList.toggle("caret-down");
+    });
+  const checkbox   = document.createElement('input');
+  checkbox.type    = "checkbox";
+  checkbox.checked = true;
+  div.appendChild(caret);
+  div.appendChild(title);
+  div.appendChild(checkbox);
+  nodeContainer.appendChild(div);
+  checkbox.addEventListener('change', function() {
+    let value = this.checked;
+    this.parentElement.parentElement.querySelectorAll("input").forEach( function(child){
+      child.checked = value;
+    });
+    viewer.IFC.selector.highlightIfcItemsByID(model.modelID,chequear())
+  });
 
   // children
   const childrenContainer = document.createElement('ul');
   childrenContainer.classList.add('nested');
   nodeContainer.appendChild(childrenContainer);
-
   children.forEach(child => createNode(childrenContainer, child));
-
 }
-
-function createLeafNode(parent, node) {
+function chequear(){
+  let ids        = [];
+  let checkboxes = document.querySelectorAll("input[type=checkbox]");
+  console.log(checkboxes);
+  checkboxes.forEach(function(input){
+    if(input.id&&input.checked){
+      ids.push(parseInt(input.id));
+    }
+  });
+  return ids; 
+}
+async function createLeafNode(parent, node) {
   const leaf = document.createElement('li');
   leaf.classList.add('leaf-node');
   leaf.id = node.expressID;
-  leaf.textContent = node.type;
-  leaf.addEventListener('click', () => {
-    viewer.IFC.selector.pickIfcItemsByID(model.modelID,[node.expressID],true)
+  const props = await viewer.IFC.getProperties(model.modelID, node.expressID, true, false);
+  leaf.textContent = props.Name.value;
+  const checkbox   = document.createElement('input');
+  checkbox.type    = "checkbox";
+  checkbox.checked = true;
+  checkbox.id      = node.expressID;
+  checkbox.addEventListener('change', function(event) {
+    viewer.IFC.selector.highlightIfcItemsByID(model.modelID,chequear())
   });
+  
+  leaf.addEventListener('click', () => {
+    viewer.IFC.selector.pickIfcItemsByID(model.modelID,[node.expressID],true);
+    todojunto(model.modelID,node.expressID)
+  });
+  leaf.appendChild(checkbox);
   parent.appendChild(leaf);
 }
 
@@ -178,16 +231,6 @@ function groupCategories(children) {
     });
   }
   return children;
-}
-
-function generateTreeLogic() {
-  const toggler = document.getElementsByClassName("caret");
-  for (let i = 0; i < toggler.length; i++) {
-    toggler[i].addEventListener("click", function() {
-      this.parentElement.querySelector(".nested").classList.toggle("active");
-      this.classList.toggle("caret-down");
-    });
-  }
 }
 
 function clearNavBar(){
@@ -250,10 +293,10 @@ function decodeIFCString(ifcString) {
   }
   return propString;
 }
-
 async function loadTableIdentification(table, properties){
 
-  const { modelID, id } = result;
+  const modelID = model.modelID;
+  const id      = properties.expressID;
   clearTable();
 
   let typeDescription;
@@ -327,11 +370,13 @@ async function clickEventHandler(e){
 
 async function loadTable(pset){
   if(pset == 0){
-    const { modelID, id } = result;
-    const props = await viewer.IFC.getProperties(modelID, id, true, false);
+    const modelID = model.modelID;
+    const id      = parseInt(pset);
+    const props   = await viewer.IFC.getProperties(model.modelID, id, true, false);
     loadTableIdentification(table, props);
   } else{
-    const { modelID, id } = result;
+    const modelID = model.modelID;
+    const id      = parseInt(pset);
     const propertySet = await viewer.IFC.loader.ifcManager.getItemProperties(modelID, parseInt(pset));
     const realValues = [];
     const complexValues = [];
